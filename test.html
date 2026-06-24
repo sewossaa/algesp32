@@ -59,30 +59,35 @@
         }
 
         function redimensionar() {
-            canvas.width = 160;
-            canvas.height = 120;
-            ctx.drawImage(video, 0, 0, 160, 120);
-            
-            let imageData = ctx.getImageData(0, 0, 160, 120);
-            let data = imageData.data;
-            
-            // Convertir a escala de grises
-            for(let i = 0; i < data.length; i += 4) {
-                let gray = (data[i] + data[i+1] + data[i+2]) / 3;
-                data[i] = data[i+1] = data[i+2] = gray;
-            }
-            
-            let buffer = new Uint8Array(4 + 160*120);
-            buffer[0] = 160 >> 8; buffer[1] = 160;
-            buffer[2] = 120 >> 8; buffer[3] = 120;
-            
-            for(let i = 0; i < 160*120; i++) {
-                buffer[4 + i] = data[i*4]; // Solo canal rojo (gris)
-            }
-            
-            ws.send(buffer);
-            document.getElementById('estado').textContent = "✓ Redimensionado y enviado";
-        }
+    canvas.width = 160;
+    canvas.height = 120;
+    ctx.drawImage(video, 0, 0, 160, 120);
+    
+    let imageData = ctx.getImageData(0, 0, 160, 120);
+    let data = imageData.data;
+    
+    // 1. Extraemos los píxeles y calculamos la escala de grises
+    let pixeles = new Uint8Array(160 * 120);
+    for(let i = 0; i < 160*120; i++) {
+        let gray = (data[i*4] + data[i*4 + 1] + data[i*4 + 2]) / 3;
+        pixeles[i] = gray;
+    }
+    
+    // 2. Mandamos el encabezado de 4 bytes para avisar al ESP32
+    let header = new Uint8Array(4);
+    header[0] = 160 >> 8; header[1] = 160;
+    header[2] = 120 >> 8; header[3] = 120;
+    ws.send(header);
+    
+    // 3. Mandamos los píxeles cortados en paquetes de 2048 bytes
+    let chunkSize = 2048;
+    for (let i = 0; i < pixeles.length; i += chunkSize) {
+        let chunk = pixeles.slice(i, i + chunkSize);
+        ws.send(chunk);
+    }
+    
+    document.getElementById('estado').textContent = "✓ Imagen enviada por bloques";
+}
     </script>
 </body>
 </html>
