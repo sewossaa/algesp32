@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Captura a ESP32</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        video { max-width: 300px; }
+        button { padding: 10px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h2>Captura de Imagen para ESP32</h2>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    
+    <br>
+    <input type="text" id="espIP" placeholder="IP del ESP32" value="192.168.1.100">
+    <button onclick="conectar()">Conectar</button>
+    <button onclick="capturarEnviar()">Capturar y Enviar</button>
+    <button onclick="redimensionar()">Redimensionar a 160x120</button>
+    
+    <p id="estado"></p>
+
+    <script>
+        let ws = null;
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('canvas');
+        let ctx = canvas.getContext('2d');
+
+        // Acceder a cámara
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => video.srcObject = stream);
+
+        function conectar() {
+            const ip = document.getElementById('espIP').value;
+            ws = new WebSocket(`ws://${ip}:81`);
+            ws.binaryType = "arraybuffer";
+            
+            ws.onopen = () => document.getElementById('estado').textContent = "✓ Conectado";
+            ws.onerror = () => document.getElementById('estado').textContent = "✗ Error";
+        }
+
+        function capturarEnviar() {
+            if(!ws) return alert("Conecta primero");
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            
+            canvas.toBlob(blob => {
+                let reader = new FileReader();
+                reader.onload = (e) => {
+                    let arr = new Uint8Array(e.target.result);
+                    ws.send(arr);
+                    document.getElementById('estado').textContent = "✓ Enviado";
+                };
+                reader.readAsArrayBuffer(blob);
+            }, 'image/jpeg', 0.8);
+        }
+
+        function redimensionar() {
+            canvas.width = 160;
+            canvas.height = 120;
+            ctx.drawImage(video, 0, 0, 160, 120);
+            
+            let imageData = ctx.getImageData(0, 0, 160, 120);
+            let data = imageData.data;
+            
+            // Convertir a escala de grises
+            for(let i = 0; i < data.length; i += 4) {
+                let gray = (data[i] + data[i+1] + data[i+2]) / 3;
+                data[i] = data[i+1] = data[i+2] = gray;
+            }
+            
+            let buffer = new Uint8Array(4 + 160*120);
+            buffer[0] = 160 >> 8; buffer[1] = 160;
+            buffer[2] = 120 >> 8; buffer[3] = 120;
+            
+            for(let i = 0; i < 160*120; i++) {
+                buffer[4 + i] = data[i*4]; // Solo canal rojo (gris)
+            }
+            
+            ws.send(buffer);
+            document.getElementById('estado').textContent = "✓ Redimensionado y enviado";
+        }
+    </script>
+</body>
+</html>
